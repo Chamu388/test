@@ -12,7 +12,7 @@ import uvicorn
 import json
 from datetime import datetime
 from rapidfuzz import process, fuzz
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- SETUP OPENAI ---

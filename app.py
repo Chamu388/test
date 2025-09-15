@@ -389,15 +389,15 @@ def search_vendor(shop_name, max_results=3):
     elif any(k in q_l for k in ["netflix", "prime", "spotify", "subscription"]):
         q += " streaming subscription"
     logger.info("[SEARCH] query='%s'", q)
-    # Lightweight retry for transient 202 rate limits
-    for attempt in range(3):
+    # Retry with exponential backoff for transient 202 rate limits
+    backoffs = [0.5, 1.0, 2.0, 3.0, 5.0]
+    for attempt, wait in enumerate(backoffs, start=1):
         try:
             with DDGS() as ddgs:
                 results = ddgs.text(q, region="uk-en", safesearch="moderate", max_results=max_results)
                 return [r.get("title", "").strip() + " - " + r.get("body", "").strip() for r in results]
         except RatelimitException as e:
-            wait = 0.5 * (attempt + 1)
-            logger.warning("[SEARCH] Rate limited, retrying in %.1fs: %s", wait, e)
+            logger.warning("[SEARCH] Rate limited (attempt %d/%d), retrying in %.1fs: %s", attempt, len(backoffs), wait, e)
             sleep(wait)
         except Exception as e:
             logger.warning("[SEARCH] DuckDuckGo error, continuing without search context: %s", e)

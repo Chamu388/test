@@ -390,6 +390,34 @@ def classify_transaction(tx, model="gpt-3.5-turbo"):
     desc = tx.get("description", "")
     money_in = tx.get("money_in")
     money_out = tx.get("money_out")
+    raw_desc = tx.get("raw_description", "")
+
+    # Heuristic: if looks like a personal name and it's a debit, treat as transfer out
+    # This avoids misclassifying person-to-person payments as vendors
+    def is_probable_person_name(text: str) -> bool:
+        cleaned = re.sub(r"[^A-Za-z\s]", " ", (text or "")).strip()
+        parts = [p for p in cleaned.split() if p]
+        if len(parts) < 2 or len(parts) > 4:
+            return False
+        title_like = {"MR", "MRS", "MS", "DR"}
+        score = 0
+        for p in parts:
+            up = p.upper()
+            if up in title_like:
+                score += 1
+                continue
+            if len(p) == 1 and p.isalpha():
+                score += 0.5
+                continue
+            if p[:1].isupper() and p[1:].islower():
+                score += 1
+        return score >= max(2, len(parts) - 1)
+
+    if (money_out or 0) > 0 and (is_probable_person_name(raw_desc) or is_probable_person_name(desc)):
+        tx["category"] = "Financial Commitments"
+        tx["subcategory"] = "Bank transactions"
+        tx["subsubcategory"] = "Transfer out"
+        return tx
 
     if not desc:
         tx["category"] = "Uncategorized"

@@ -438,17 +438,23 @@ Use the CATEGORY_MAP exactly as given below for reference:
 Transaction description: "{desc}"
 Money In: {money_in}, Money Out: {money_out}
 
-Additional context from web search:
+Additional context from web search (quoted snippets may be truncated):
 {search_text}
 
 Instructions:
-1. First, think step by step about the transaction. Explain to yourself what kind of expense or income this is, considering the description and search context.
-2. Then decide the most appropriate category, subcategory, and sub-subcategory. 
+1. Think step by step and explain why this is the correct classification using both the description and any useful search snippets.
+2. Then output the final labels.
 3. If it is Money In, choose a category under "Income Categories".
 4. If it is Money Out, choose a category under "Essential Living Costs", "Family & Dependents", "Financial Commitments", or "Lifestyle & Discretionary".
 5. If the transaction mentions a person's name and it is Money Out, classify under "Financial Commitments" → "Transfer Out".
-6. Respond ONLY in JSON format like this (no extra text):
-{{"category": "CATEGORY", "subcategory": "SUBCATEGORY", "subsubcategory": "SUBSUBCATEGORY"}}.
+6. Respond ONLY in JSON (no extra text) with this shape:
+{{
+  "category": "CATEGORY",
+  "subcategory": "SUBCATEGORY",
+  "subsubcategory": "SUBSUBCATEGORY",
+  "reasoning": "One short paragraph explaining your decision",
+  "evidence": ["key term 1", "key term 2"]
+}}
 If a subcategory or sub-subcategory is not applicable, set it to null.
 """
 
@@ -463,6 +469,11 @@ If a subcategory or sub-subcategory is not applicable, set it to null.
         tx["category"] = result.get("category", "Uncategorized")
         tx["subcategory"] = result.get("subcategory")
         tx["subsubcategory"] = result.get("subsubcategory")
+        # include explanation fields for transparency
+        if isinstance(result.get("reasoning"), str):
+            tx["reasoning"] = result.get("reasoning")
+        if isinstance(result.get("evidence"), list):
+            tx["evidence"] = result.get("evidence")
     except Exception as e:
         print("[Category Classification Error]", e)
         tx["category"] = "Uncategorized"

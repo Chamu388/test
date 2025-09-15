@@ -4,13 +4,7 @@ FROM python:3.11-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        tesseract-ocr \
-       libgl1 \
        poppler-utils \
-       build-essential \
-       pkg-config \
-       libjpeg62-turbo \
-       libpng16-16 \
-       libtiff5 \
        ghostscript \
     && rm -rf /var/lib/apt/lists/*
 

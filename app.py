@@ -373,9 +373,13 @@ def search_vendor(shop_name, max_results=3):
     shop_name = (shop_name or "").strip()
     if not shop_name:
         return []
-    with DDGS() as ddgs:
-        results = ddgs.text(shop_name, region="uk-en", safesearch="moderate", max_results=max_results)
-        return [r["title"] + " - " + r["body"] for r in results]
+    try:
+        with DDGS() as ddgs:
+            results = ddgs.text(shop_name, region="uk-en", safesearch="moderate", max_results=max_results)
+            return [r["title"] + " - " + r["body"] for r in results]
+    except Exception as e:
+        logger.warning("[SEARCH] DuckDuckGo error, continuing without search context: %s", e)
+        return []
 
 
 # -----------------------

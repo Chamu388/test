@@ -193,6 +193,7 @@ def gpt_extract_transactions(text: str, bank: str, first_page_text: str = "", oc
                 },
                 {"role": "user", "content": f"Bank: {bank}\n\nTransaction lines:\n{text}"}
             ],
+            temperature=0,
             response_format={"type": "json_object"}
         )
 
@@ -427,6 +428,7 @@ If a subcategory or sub-subcategory is not applicable, set it to null.
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
+            temperature=0,
             response_format={"type": "json_object"}
         )
         result = json.loads(response.choices[0].message.content)

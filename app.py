@@ -483,7 +483,8 @@ Instructions:
 3. If it is Money In, choose a category under "Income Categories".
 4. If it is Money Out, choose a category under "Essential Living Costs", "Family & Dependents", "Financial Commitments", or "Lifestyle & Discretionary".
 5. If the transaction mentions a person's name and it is Money Out, classify under "Financial Commitments" → "Transfer Out".
-6. Respond ONLY in JSON (no extra text) with this shape:
+6. If search or description indicates vehicle/car/motor insurance (insurer brand names, policy, premium), classify under "Transport & Travel" → "Vehicle maintenance & insurance".
+7. Respond ONLY in JSON (no extra text) with this shape:
 {{
   "category": "CATEGORY",
   "subcategory": "SUBCATEGORY",

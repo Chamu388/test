@@ -179,7 +179,7 @@ def gpt_extract_transactions(text: str, bank: str, first_page_text: str = "", oc
     logger.info("[GPT] Sending preprocessed text to model (first 1000 chars): %s", text[:1000])
     try:
         response = client.chat.completions.create(
-            model="gpt-5",
+            model="gpt-3.5-turbo",
             messages=[
                 {
                     "role": "system",
@@ -381,7 +381,7 @@ def search_vendor(shop_name, max_results=3):
 # -----------------------
 # FUNCTION: Classify single transaction
 # -----------------------
-def classify_transaction(tx, model="gpt-5"):
+def classify_transaction(tx, model="gpt-3.5-turbo"):
     desc = tx.get("description", "")
     money_in = tx.get("money_in")
     money_out = tx.get("money_out")
@@ -438,7 +438,7 @@ If a subcategory or sub-subcategory is not applicable, set it to null.
     return tx
 
 
-def classify_all_transactions(transactions, model="gpt-5"):
+def classify_all_transactions(transactions, model="gpt-3.5-turbo"):
     for i, tx in enumerate(transactions):
         transactions[i] = classify_transaction(tx, model=model)
     return transactions

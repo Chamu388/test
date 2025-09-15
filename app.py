@@ -417,6 +417,12 @@ def classify_transaction(tx, model="gpt-3.5-turbo"):
         tx["category"] = "Financial Commitments"
         tx["subcategory"] = "Bank transactions"
         tx["subsubcategory"] = "Transfer out"
+        tx["reasoning"] = "Description resembles a personal name; debit likely a person-to-person transfer."
+        tx["evidence"] = [
+            (raw_desc or desc)[:80],
+            "money_out>0",
+            "name-like pattern detected"
+        ]
         return tx
 
     if not desc:
@@ -474,6 +480,15 @@ If a subcategory or sub-subcategory is not applicable, set it to null.
             tx["reasoning"] = result.get("reasoning")
         if isinstance(result.get("evidence"), list):
             tx["evidence"] = result.get("evidence")
+        # defaults if model omitted fields
+        if not isinstance(tx.get("reasoning"), str) or not tx["reasoning"].strip():
+            tx["reasoning"] = "Model omitted reasoning; classification based on description and (if available) search context."
+        if not isinstance(tx.get("evidence"), list) or len(tx["evidence"]) == 0:
+            tx["evidence"] = [
+                (desc or "")[0:80],
+                f"money_in={money_in}",
+                f"money_out={money_out}"
+            ]
     except Exception as e:
         print("[Category Classification Error]", e)
         tx["category"] = "Uncategorized"

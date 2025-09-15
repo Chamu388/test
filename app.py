@@ -379,7 +379,16 @@ def search_vendor(shop_name, max_results=3):
     if not shop_name:
         return []
     # Normalize query to reduce duplicates
-    q = shop_name
+    q = shop_name.strip()
+    q_l = q.lower()
+    # Generic, non-vendor-specific query boosts (not hardcoding brands)
+    if "insurance" in q_l and "car" not in q_l and "motor" not in q_l:
+        q += " car insurance uk"
+    elif any(k in q_l for k in ["energy", "electric", "gas"]):
+        q += " energy supplier uk"
+    elif any(k in q_l for k in ["netflix", "prime", "spotify", "subscription"]):
+        q += " streaming subscription"
+    logger.info("[SEARCH] query='%s'", q)
     # Lightweight retry for transient 202 rate limits
     for attempt in range(3):
         try:

@@ -13,9 +13,12 @@ import json
 from datetime import datetime
 from rapidfuzz import process, fuzz
 from duckduckgo_search import DDGS
+from duckduckgo_search.exceptions import RatelimitException
 from fastapi.middleware.cors import CORSMiddleware
 import traceback
 import logging
+from functools import lru_cache
+from time import sleep
 
 # --- SETUP OPENAI ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -370,17 +373,27 @@ CATEGORY_MAP = {
 # -----------------------
 # FUNCTION: DuckDuckGo search helper
 # -----------------------
+@lru_cache(maxsize=512)
 def search_vendor(shop_name, max_results=3):
     shop_name = (shop_name or "").strip()
     if not shop_name:
         return []
-    try:
-        with DDGS() as ddgs:
-            results = ddgs.text(shop_name, region="uk-en", safesearch="moderate", max_results=max_results)
-            return [r["title"] + " - " + r["body"] for r in results]
-    except Exception as e:
-        logger.warning("[SEARCH] DuckDuckGo error, continuing without search context: %s", e)
-        return []
+    # Normalize query to reduce duplicates
+    q = shop_name
+    # Lightweight retry for transient 202 rate limits
+    for attempt in range(3):
+        try:
+            with DDGS() as ddgs:
+                results = ddgs.text(q, region="uk-en", safesearch="moderate", max_results=max_results)
+                return [r.get("title", "").strip() + " - " + r.get("body", "").strip() for r in results]
+        except RatelimitException as e:
+            wait = 0.5 * (attempt + 1)
+            logger.warning("[SEARCH] Rate limited, retrying in %.1fs: %s", wait, e)
+            sleep(wait)
+        except Exception as e:
+            logger.warning("[SEARCH] DuckDuckGo error, continuing without search context: %s", e)
+            break
+    return []
 
 
 # -----------------------
@@ -418,13 +431,16 @@ def classify_transaction(tx, model="gpt-3.5-turbo"):
             return False
         return True
 
-    if (money_out or 0) > 0 and (is_probable_person_name(raw_desc) or is_probable_person_name(desc)):
+    # Prefer classifying based on the cleaned merchant description (not raw);
+    # only fall back to raw if description is empty
+    name_text = desc or raw_desc
+    if (money_out or 0) > 0 and is_probable_person_name(name_text):
         tx["category"] = "Financial Commitments"
         tx["subcategory"] = "Bank transactions"
         tx["subsubcategory"] = "Transfer out"
         tx["reasoning"] = "Description resembles a personal name; debit likely a person-to-person transfer."
         tx["evidence"] = [
-            (raw_desc or desc)[:80],
+            (name_text or "")[:80],
             "money_out>0",
             "name-like pattern detected"
         ]

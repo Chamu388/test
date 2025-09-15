@@ -393,25 +393,30 @@ def classify_transaction(tx, model="gpt-3.5-turbo"):
     raw_desc = tx.get("raw_description", "")
 
     # Heuristic: if looks like a personal name and it's a debit, treat as transfer out
-    # This avoids misclassifying person-to-person payments as vendors
+    # Stricter detection to avoid brands/domains/cards being treated as names
     def is_probable_person_name(text: str) -> bool:
-        cleaned = re.sub(r"[^A-Za-z\s]", " ", (text or "")).strip()
-        parts = [p for p in cleaned.split() if p]
-        if len(parts) < 2 or len(parts) > 4:
+        candidate = (text or "").strip()
+        # Quick fails: domains, slashes, digits, ampersands
+        if any(ch in candidate for ch in ["/", "\\", ".", "@", "&", "_"]) or any(ch.isdigit() for ch in candidate):
             return False
-        title_like = {"MR", "MRS", "MS", "DR"}
-        score = 0
-        for p in parts:
-            up = p.upper()
-            if up in title_like:
-                score += 1
-                continue
-            if len(p) == 1 and p.isalpha():
-                score += 0.5
-                continue
-            if p[:1].isupper() and p[1:].islower():
-                score += 1
-        return score >= max(2, len(parts) - 1)
+        # Remove trailing transaction codes
+        candidate = re.sub(r"\b(DD|DEB|CHQ|FPO|FPI|SO|TFR|BP)\b", " ", candidate, flags=re.IGNORECASE)
+        cleaned = re.sub(r"[^A-Za-z\s]", " ", candidate).strip()
+        parts = [p for p in cleaned.split() if p]
+        if len(parts) != 2:
+            return False
+        vendor_keywords = {
+            "INSURANCE","ENERGY","NETFLIX","MASTERCARD","CARD","CREDIT","KLARNA","TEMU","COUNTRYWIDE","RESIDE",
+            "SAVING","LIGHTCAST","DISCOVER","PLATINUM","YOUR","SAVINGS","BANK","PAYMENT","TRANSFER"
+        }
+        if any(p.upper() in vendor_keywords for p in parts):
+            return False
+        # Require Title Case for both names and alphabetic with vowels (to avoid acronyms)
+        def looks_like_name(w: str) -> bool:
+            return w[:1].isupper() and w[1:].islower() and any(v in w.lower() for v in "aeiou") and w.isalpha() and 2 <= len(w) <= 14
+        if not all(looks_like_name(p) for p in parts):
+            return False
+        return True
 
     if (money_out or 0) > 0 and (is_probable_person_name(raw_desc) or is_probable_person_name(desc)):
         tx["category"] = "Financial Commitments"

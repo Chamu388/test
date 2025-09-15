@@ -429,6 +429,29 @@ def classify_transaction(tx, model="gpt-3.5-turbo"):
     money_out = tx.get("money_out")
     raw_desc = tx.get("raw_description", "")
 
+    if not desc:
+        tx["category"] = "Uncategorized"
+        tx["subcategory"] = None
+        tx["subsubcategory"] = None
+        return tx
+
+    # Perform vendor search first so we can force mappings based on clear signals
+    search_results = search_vendor(desc, max_results=2)
+    search_text = "\n".join(search_results) if search_results else "No search results found."
+    combined_signal = f"{desc}\n{search_text}".lower()
+
+    # FORCE: if car/vehicle/motor insurance is clearly indicated, classify accordingly (no matter what)
+    if any(kw in combined_signal for kw in ["car insurance", "motor insurance", "vehicle insurance"]):
+        tx["category"] = "Transport & Travel"
+        tx["subcategory"] = "Vehicle maintenance & insurance"
+        tx["subsubcategory"] = None
+        tx["reasoning"] = "Search/description explicitly indicates car/motor/vehicle insurance, which maps to vehicle insurance."
+        evidence_items = [desc[:80]]
+        if search_results:
+            evidence_items.append(search_results[0][:120])
+        tx["evidence"] = evidence_items
+        return tx
+
     # Heuristic: if looks like a personal name and it's a debit, treat as transfer out
     # Stricter detection to avoid brands/domains/cards being treated as names
     def is_probable_person_name(text: str) -> bool:
@@ -470,14 +493,7 @@ def classify_transaction(tx, model="gpt-3.5-turbo"):
         ]
         return tx
 
-    if not desc:
-        tx["category"] = "Uncategorized"
-        tx["subcategory"] = None
-        tx["subsubcategory"] = None
-        return tx
-
-    search_results = search_vendor(desc, max_results=3)
-    search_text = "\n".join(search_results) if search_results else "No search results found."
+    # search_text already computed above
 
     prompt = f"""
 You are an expert financial analyst. 

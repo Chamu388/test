@@ -4,7 +4,7 @@ from PIL import Image
 import pytesseract
 import pdfplumber
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from openai import OpenAI
 import os
@@ -14,6 +14,8 @@ from datetime import datetime
 from rapidfuzz import process, fuzz
 from duckduckgo_search import DDGS
 from fastapi.middleware.cors import CORSMiddleware
+import traceback
+import logging
 
 # --- SETUP OPENAI ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -24,6 +26,9 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 app = FastAPI()
 
+# Server logger (shows in Uvicorn/Railway logs)
+logger = logging.getLogger("uvicorn.error")
+
 # Allow CORS
 app.add_middleware(
     CORSMiddleware,
@@ -32,6 +37,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Healthcheck ---
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+# --- Global exception handler for detailed logging ---
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    print("[UNHANDLED EXCEPTION]", tb)
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
 # --- BANK & CUSTOMER DETECTION ---
 def detect_bank_and_name(pdf_path: Path) -> Tuple[str, str]:
@@ -159,10 +176,10 @@ def extract_page_text(page):
 # --- GPT Parser (unchanged except no masking) ---
 def gpt_extract_transactions(text: str, bank: str, first_page_text: str = "", ocr_text: str = ""):
     safe_text = mask_personal_info(text)
-    print("\n[DEBUG] Sending to GPT (preprocessed text):\n", text[:1000])
+    logger.info("[GPT] Sending preprocessed text to model (first 1000 chars): %s", text[:1000])
     try:
         response = client.chat.completions.create(
-            model="gpt-5",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -180,7 +197,7 @@ def gpt_extract_transactions(text: str, bank: str, first_page_text: str = "", oc
         )
 
         raw_content = response.choices[0].message.content
-        print("\n[DEBUG] GPT raw response:\n", raw_content)
+        logger.info("[GPT] Raw response (truncated 1000 chars): %s", str(raw_content)[:1000])
 
         parsed = json.loads(raw_content)
 
@@ -245,7 +262,7 @@ def gpt_extract_transactions(text: str, bank: str, first_page_text: str = "", oc
 
         return transactions
     except Exception as e:
-        print("GPT parse error:", e)
+        logger.exception("[GPT] parse error: %s", e)
         return []
 
 
@@ -364,7 +381,7 @@ def search_vendor(shop_name, max_results=3):
 # -----------------------
 # FUNCTION: Classify single transaction
 # -----------------------
-def classify_transaction(tx, model="gpt-4o"):
+def classify_transaction(tx, model="gpt-4o-mini"):
     desc = tx.get("description", "")
     money_in = tx.get("money_in")
     money_out = tx.get("money_out")
@@ -439,6 +456,9 @@ def extract_transactions_from_pdf(pdf_path: Path, bank_name: str):
 
     tx_block = isolate_transactions(all_text, bank_name)
     preprocessed = preprocess_transactions(tx_block)
+    logger.info("[EXTRACT] chars_total=%d", len(all_text))
+    first_lines = "\n".join(preprocessed.splitlines()[:20])
+    logger.info("[EXTRACT] preprocessed_first_lines:\n%s", first_lines)
     transactions = gpt_extract_transactions(preprocessed, bank_name)
     transactions = classify_all_transactions(transactions)
     return transactions

@@ -406,9 +406,11 @@ def search_vendor(shop_name, max_results=2):
     backoffs = [0.5, 1.0, 2.0, 3.0, 5.0]
     for attempt, wait in enumerate(backoffs, start=1):
         try:
-            with DDGS(impersonate="chrome") as ddgs:
+            with DDGS() as ddgs:
                 results = ddgs.text(q, region="uk-en", safesearch="moderate", max_results=max_results)
-                return [r.get("title", "").strip() + " - " + r.get("body", "").strip() for r in results]
+                snippets = [r.get("title", "").strip() + " - " + r.get("body", "").strip() for r in results]
+                # Prepend the query so downstream prompt sees it even if snippets are empty
+                return [f"QUERY: {q}"] + snippets
         except RatelimitException as e:
             logger.warning("[SEARCH] Rate limited (attempt %d/%d), retrying in %.1fs: %s", attempt, len(backoffs), wait, e)
             sleep(wait)

@@ -416,8 +416,10 @@ def search_vendor(shop_name, max_results=2):
             sleep(wait)
         except Exception as e:
             logger.warning("[SEARCH] DuckDuckGo error, continuing without search context: %s", e)
-            break
-    return []
+            # Return the query even if we couldn't fetch snippets
+            return [f"QUERY: {q}"]
+    # If all retries exhausted, still return the query so prompts can use it
+    return [f"QUERY: {q}"]
 
 
 # -----------------------

@@ -19,6 +19,8 @@ import traceback
 import logging
 from functools import lru_cache
 from time import sleep
+import time
+import random
 
 # --- SETUP OPENAI ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -373,8 +375,10 @@ CATEGORY_MAP = {
 # -----------------------
 # FUNCTION: DuckDuckGo search helper
 # -----------------------
+_last_search_ts = 0.0
+
 @lru_cache(maxsize=512)
-def search_vendor(shop_name, max_results=3):
+def search_vendor(shop_name, max_results=2):
     shop_name = (shop_name or "").strip()
     if not shop_name:
         return []
@@ -389,11 +393,20 @@ def search_vendor(shop_name, max_results=3):
     elif any(k in q_l for k in ["netflix", "prime", "spotify", "subscription"]):
         q += " streaming subscription"
     logger.info("[SEARCH] query='%s'", q)
+    # Simple process-wide throttle with jitter to avoid hammering the endpoint
+    global _last_search_ts
+    min_interval = 1.5
+    now = time.monotonic()
+    wait_needed = (_last_search_ts + min_interval) - now
+    if wait_needed > 0:
+        jitter = random.uniform(0.2, 0.6)
+        sleep(wait_needed + jitter)
+    _last_search_ts = time.monotonic()
     # Retry with exponential backoff for transient 202 rate limits
     backoffs = [0.5, 1.0, 2.0, 3.0, 5.0]
     for attempt, wait in enumerate(backoffs, start=1):
         try:
-            with DDGS() as ddgs:
+            with DDGS(impersonate="chrome") as ddgs:
                 results = ddgs.text(q, region="uk-en", safesearch="moderate", max_results=max_results)
                 return [r.get("title", "").strip() + " - " + r.get("body", "").strip() for r in results]
         except RatelimitException as e:

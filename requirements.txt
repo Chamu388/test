@@ -1,0 +1,10 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pillow==10.4.0
+pytesseract==0.3.13
+pdfplumber==0.11.4
+openai==1.51.2
+rapidfuzz==3.10.0
+duckduckgo-search==6.2.6
+python-multipart==0.0.12
+

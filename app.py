@@ -12,8 +12,8 @@ import uvicorn
 import json
 from datetime import datetime
 from rapidfuzz import process, fuzz
-from duckduckgo_search import DDGS
-from duckduckgo_search.exceptions import RatelimitException
+import requests
+from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
 import traceback
 import logging
@@ -373,53 +373,80 @@ CATEGORY_MAP = {
 
 
 # -----------------------
-# FUNCTION: DuckDuckGo search helper
+# FUNCTION: Free search helper (Wikipedia + hints)
 # -----------------------
-_last_search_ts = 0.0
 
-@lru_cache(maxsize=512)
+def search_wikipedia(company_name, max_results=2):
+    """Free Wikipedia search for company info"""
+    try:
+        # Clean company name for Wikipedia search
+        clean_name = re.sub(r'[^\w\s]', '', company_name).strip()
+        if not clean_name:
+            return []
+        
+        # Search Wikipedia API
+        search_url = "https://en.wikipedia.org/w/api.php"
+        params = {
+            "action": "query",
+            "format": "json",
+            "list": "search",
+            "srsearch": f"{clean_name} company business",
+            "srlimit": max_results
+        }
+        
+        response = requests.get(search_url, params=params, timeout=5)
+        if response.status_code != 200:
+            return []
+            
+        data = response.json()
+        results = []
+        
+        for item in data.get("query", {}).get("search", []):
+            title = item.get("title", "")
+            snippet = item.get("snippet", "")
+            if title and snippet:
+                results.append(f"{title} - {snippet}")
+                
+        return results
+    except Exception as e:
+        logger.warning("[WIKI] Search error: %s", e)
+        return []
+
+@lru_cache(maxsize=256)
 def search_vendor(shop_name, max_results=2):
+    """Free search using Wikipedia + description hints"""
     shop_name = (shop_name or "").strip()
     if not shop_name:
         return []
-    # Normalize query to reduce duplicates
+    
+    # Add context hints based on description
     q = shop_name.strip()
     q_l = q.lower()
-    # Generic, non-vendor-specific query boosts (not hardcoding brands)
+    
     if "insurance" in q_l and "car" not in q_l and "motor" not in q_l:
-        q += " car insurance uk"
+        q += " car insurance"
     elif any(k in q_l for k in ["energy", "electric", "gas"]):
-        q += " energy supplier uk"
+        q += " energy supplier"
     elif any(k in q_l for k in ["netflix", "prime", "spotify", "subscription"]):
-        q += " streaming subscription"
+        q += " streaming"
+    
     logger.info("[SEARCH] query='%s'", q)
-    # Simple process-wide throttle with jitter to avoid hammering the endpoint
-    global _last_search_ts
-    min_interval = 1.5
-    now = time.monotonic()
-    wait_needed = (_last_search_ts + min_interval) - now
-    if wait_needed > 0:
-        jitter = random.uniform(0.2, 0.6)
-        sleep(wait_needed + jitter)
-    _last_search_ts = time.monotonic()
-    # Retry with exponential backoff for transient 202 rate limits
-    backoffs = [0.5, 1.0, 2.0, 3.0, 5.0]
-    for attempt, wait in enumerate(backoffs, start=1):
-        try:
-            with DDGS() as ddgs:
-                results = ddgs.text(q, region="uk-en", safesearch="moderate", max_results=max_results)
-                snippets = [r.get("title", "").strip() + " - " + r.get("body", "").strip() for r in results]
-                # Prepend the query so downstream prompt sees it even if snippets are empty
-                return [f"QUERY: {q}"] + snippets
-        except RatelimitException as e:
-            logger.warning("[SEARCH] Rate limited (attempt %d/%d), retrying in %.1fs: %s", attempt, len(backoffs), wait, e)
-            sleep(wait)
-        except Exception as e:
-            logger.warning("[SEARCH] DuckDuckGo error, continuing without search context: %s", e)
-            # Return the query even if we couldn't fetch snippets
-            return [f"QUERY: {q}"]
-    # If all retries exhausted, still return the query so prompts can use it
-    return [f"QUERY: {q}"]
+    
+    # Try Wikipedia first (free, reliable)
+    wiki_results = search_wikipedia(q, max_results)
+    if wiki_results:
+        return [f"QUERY: {q}"] + wiki_results
+    
+    # Fallback: return query with description-based hints
+    hints = []
+    if "insurance" in q_l:
+        hints.append("insurance company")
+    if "energy" in q_l:
+        hints.append("energy supplier")
+    if "netflix" in q_l or "streaming" in q_l:
+        hints.append("streaming service")
+    
+    return [f"QUERY: {q}"] + hints
 
 
 # -----------------------
